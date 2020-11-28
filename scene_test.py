@@ -31,7 +31,7 @@ class Threshold(Enum):
     Excess_Ratio = 0.2  # Rate of excess between two days
     Error_Ratio = 0.01  # Error Rate of peak value in different ways
     Overshoot_Ratio = 0.15  # Rate of overshoot at one analyser
-    Invalid_Count = 20  # Number of data less than this is invalid
+    Invalid_Count = 20  # Number of data less than this number is invalid
 
 
 def main():
@@ -80,19 +80,26 @@ def memory_leak_analyser(file):
             proc_mem.append(int(line.split(":")[1].strip()))
             continue
 
-    upload_to_esearch(
-        memory_peak_analyser(proc_mem)[1],
-        memory_overshoot_analyser(cache)[1])
+    # upload_to_esearch(
+    #     memory_peak_analyser(proc_mem)[1],
+    #     memory_overshoot_analyser(cache)[1])
+    proc_mem = [19, 19, 19, 20, 22, 22, 22, 22, 23, 23, 23, 24, 23, 23, 23, 22, 23, 23, 22, 23, 22, 22, 23, 24, 24, 24,
+                28, 29, 28, 24, 25, 26, 24, 26, 30, 28, 30, 30, 29, 28, 30, 29, 29, 31, 33, 29, 29, 27, 28, 28, 27, 29,
+                26, 27, 26, 30, 28, 30, 29, 29, 28, 30, 28, 30, 29, 29, 28, 26, 28, 29, 29, 29, 28, 27, 29, 31,
+                30, 28, 30, 29, 29, 28, 26, 28, 27, 27, 30, 30, 28, 30, 29, 29, 28, 29, 29, 29, 27, 29, 28, 30]
+    plot_series(proc_mem)
 
     exps = {
         "Memory Peak Exception": memory_peak_analyser,
-        "Memory Overshoot Exception": memory_overshoot_analyser
+        # "Memory Overshoot Exception": memory_overshoot_analyser
     }
 
     for exp, analyser in exps.items():
-        if (exp == "Memory Peak Exception" and analyser(proc_mem)[0]) or (
-                exp == "Memory Overshoot Exception" and analyser(cache)[0]):
-            notify_wechat(CONTEXT['branch'], CONTEXT['platform'], exp, CONTEXT['jobName'], CONTEXT['buildNumber'])
+        if (exp == "Memory Peak Exception" and analyser(proc_mem)[0]):
+            print("[if_notify_wechat]: Ture")
+            # notify_wechat(CONTEXT['branch'], CONTEXT['platform'], exp, CONTEXT['jobName'], CONTEXT['buildNumber'])
+        else:
+            print("[if_notify_wechat]: False")
 
 
 def notify_wechat(target_branch, target_os, event, job_name, build_number, wechat_url=WECHAT_URL):
@@ -119,7 +126,7 @@ def plot_series(series, start=18, end=30, freq=2):
     """This is a helper function to view memory usage"""
     from matplotlib import pyplot
     breakpoint = np.arange(0, len(series))
-    pprint(len(breakpoint))
+    print("[Number of test data]:", len(breakpoint))
     pyplot.plot(breakpoint, series)
     pyplot.xlabel('step')
     pyplot.ylabel('memory_usage')
@@ -146,12 +153,14 @@ def memory_overshoot_analyser(mem, keywords="cache_usage"):
 
 
 def memory_peak_analyser(mem):
+    print("[Peak Value]:", calc_peak(mem))
+    print("[if_overshoot]:", if_overshoot(mem))
     if len(set(mem)) == 1:  # If the set elements are the same, it will not be analyzed
         return (False, "InvalidValue")
     if len(mem) <= Threshold.Invalid_Count.value:  # If the data set is too small, it will not be analyzed
         return (False, "InvalidValue")
     if if_overshoot(mem) or calc_peak(mem) >= Threshold.Notify_Peak.value:
-        pprint("[Peak Value]: {}".format(calc_peak(mem)))
+        # pprint("[Peak Value]: {}".format(calc_peak(mem)))
         return (True, calc_peak(mem))
     return (False, calc_peak(mem))
 
@@ -260,6 +269,8 @@ def if_overshoot(mem):
     mem_avg = sum(mem) / len(mem)
 
     def _inner(arry, qb, overshoot_ratio=Threshold.Overshoot_Ratio.value):
+        print("  --", len(arry) // qb, " ", round(abs(
+            sum(arry[:qb]) / qb - sum(arry[-qb:]) / qb) / (sum(arry[:qb]) / qb), 6))
         return abs(
             sum(arry[:qb]) / qb - sum(arry[-qb:]) / qb) / (sum(arry[:qb]) / qb) >= overshoot_ratio
 
@@ -271,4 +282,4 @@ def pprint(*args, **kwargs):
 
 
 if __name__ == '__main__':
-    main()
+    memory_leak_analyser("memory_info.log")

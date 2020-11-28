@@ -1,0 +1,10 @@
+[Number of test data]: 100
+[Peak Value]: 0.079
+[if_overshoot]: True
+-- 4 0.293694
+-- 8 0.337209
+[if_notify_wechat]: Ture
+
+Meet Expectation : True
+
+
