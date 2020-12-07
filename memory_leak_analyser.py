@@ -17,6 +17,7 @@ import math
 import numpy as np
 import requests
 from elasticsearch import Elasticsearch
+from matplotlib import pyplot
 
 ELASTIC_URI = "https://es-xxxx"
 WECHAT_URL = "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxx"
@@ -27,11 +28,11 @@ YESTERDAY = datetime.date.today() - datetime.timedelta(days=1)
 
 
 class Threshold(Enum):
-    Notify_Peak = 0.0285  # Exceeding this value will notify
+    Notify_Eigenvalue = 0.0285  # Exceeding this value will notify
     Excess_Ratio = 0.2  # Rate of excess between two days
-    Error_Ratio = 0.01  # Error Rate of peak value in different ways
-    Overshoot_Ratio = 0.15  # Rate of overshoot at one analyser
-    Invalid_Count = 20  # Number of data less than this is invalid
+    Error_Ratio = 0.01  # Error Rate of eigenvalue in different ways
+    Overshoot_Ratio = 0.2  # Rate of overshoot at one analyser
+    Invalid_Count = 300  # Number of data less than this is invalid
 
 
 def main():
@@ -81,17 +82,17 @@ def memory_leak_analyser(file):
             continue
 
     upload_to_esearch(
-        memory_peak_analyser(proc_mem)[1],
+        memory_eigenvalue_analyser(proc_mem)[1],
         memory_overshoot_analyser(cache)[1])
 
     exps = {
-        "Memory Peak Exception": memory_peak_analyser,
-        "Memory Overshoot Exception": memory_overshoot_analyser
+        "Memory Leak": memory_eigenvalue_analyser,
+        "Abnormal Memory Fluctuation": memory_overshoot_analyser
     }
 
     for exp, analyser in exps.items():
-        if (exp == "Memory Peak Exception" and analyser(proc_mem)[0]) or (
-                exp == "Memory Overshoot Exception" and analyser(cache)[0]):
+        if (exp == "Memory Leak" and analyser(proc_mem)[0]) or (
+                exp == "Abnormal Memory Fluctuation" and analyser(cache)[0]):
             notify_wechat(CONTEXT['branch'], CONTEXT['platform'], exp, CONTEXT['jobName'], CONTEXT['buildNumber'])
 
 
@@ -99,7 +100,7 @@ def notify_wechat(target_branch, target_os, event, job_name, build_number, wecha
     send_info = "<font color=\"red\">Smoke Test Memory Leak.</font> Please deal with them as soon as possible.\n " \
                 ">** {gen_report_date} {target_branch} {target_os} **\n " \
                 ">** Type : <font color=\"warning\">{event}</font> ** \n" \
-                "\n[前往CI查看详情](http://localhost/job/SDK_CI/job/Daily-Test/job/{job_name}/{build_number}/console)\n".format(
+                "\n[Details](http://localhost/job/SDK_CI/job/Daily-Test/job/{job_name}/{build_number}/console)\n".format(
         gen_report_date=TODAY, target_branch=target_branch, target_os=target_os, event=event, job_name=job_name,
         build_number=build_number)
     payload = {
@@ -115,11 +116,20 @@ def notify_wechat(target_branch, target_os, event, job_name, build_number, wecha
     requests.post(wechat_url, data=json.dumps(payload))
 
 
-def plot_series(series, start=18, end=30, freq=2):
+def gen_memory_graph(series):
+    xArr, yArr = list(range(len(series))), series
+    pyplot.xlabel('step')
+    pyplot.ylabel('memory_usage')
+    pyplot.title('Memory Leak Analyser')
+    pyplot.plot(xArr, yArr, "ro")
+    fig = pyplot.gcf()
+    fig.savefig('memory_usage_graph.png', dpi=100)
+
+
+def plot_series(series, start=500, end=3000, freq=500):
     """This is a helper function to view memory usage"""
-    from matplotlib import pyplot
     breakpoint = np.arange(0, len(series))
-    pprint(len(breakpoint))
+    print(len(breakpoint))
     pyplot.plot(breakpoint, series)
     pyplot.xlabel('step')
     pyplot.ylabel('memory_usage')
@@ -145,18 +155,18 @@ def memory_overshoot_analyser(mem, keywords="cache_usage"):
     return (False, tday_avg)
 
 
-def memory_peak_analyser(mem):
+def memory_eigenvalue_analyser(mem):
     if len(set(mem)) == 1:  # If the set elements are the same, it will not be analyzed
         return (False, "InvalidValue")
     if len(mem) <= Threshold.Invalid_Count.value:  # If the data set is too small, it will not be analyzed
         return (False, "InvalidValue")
-    if if_overshoot(mem) or calc_peak(mem) >= Threshold.Notify_Peak.value:
-        pprint("[Peak Value]: {}".format(calc_peak(mem)))
-        return (True, calc_peak(mem))
-    return (False, calc_peak(mem))
+    if if_overshoot(mem) or calc_eigenvalue(mem) >= Threshold.Notify_Eigenvalue.value:
+        pprint("[Eigenvalue]: {}".format(calc_eigenvalue(mem)))
+        return (True, calc_eigenvalue(mem))
+    return (False, calc_eigenvalue(mem))
 
 
-def calc_peak(mem):
+def calc_eigenvalue(mem):
     """
     Description:
         Ridge regression
@@ -172,15 +182,15 @@ def calc_peak(mem):
     if np.linalg.det(xTx) == 0.0:
         pprint("This matrix is singular, cannot do inverse")
         return
-    double_peak, line_pred_avg = (
-                                         xTx.I * (xMat.T * yMat))[1, 0], (
-                                         line_trend(mem) + line_fit(mem)) / 2  # Regression coefficient
-    peak = double_peak if abs(line_pred_avg -
-                              double_peak) <= Threshold.Error_Ratio.value else line_pred_avg
-    return round(peak, 4)
+    double_eigenvalue, line_pred_avg = (
+                                               xTx.I * (xMat.T * yMat))[1, 0], (
+                                               line_trend(mem) + line_fit(mem)) / 2  # Regression coefficient
+    eigenvalue = double_eigenvalue if abs(line_pred_avg -
+                                          double_eigenvalue) <= Threshold.Error_Ratio.value else line_pred_avg
+    return round(eigenvalue, 4)
 
 
-def upload_to_esearch(proc_mem_peak, cache):
+def upload_to_esearch(proc_mem_eigenvalue, cache):
     pprint('[INFO]: Upload to Elastic Search')
     HEADERS = {"Content-Type": "application/json"}
     AUTH = ('elastic', 'auth_xxxx')
@@ -194,7 +204,7 @@ def upload_to_esearch(proc_mem_peak, cache):
             "date": TODAY,
             "timestamp": int(time.time() * 1000),
             "build_num": os.environ.get('BUILD_NUMBER', 0),
-            "proc_mem_peak": proc_mem_peak,
+            "proc_mem_eigenvalue": proc_mem_eigenvalue,
             "cache_usage": cache,
         }
         try:
