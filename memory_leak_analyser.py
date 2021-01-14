@@ -32,7 +32,7 @@ class Threshold(Enum):
     Excess_Ratio = 0.2  # Rate of excess between two days
     Error_Ratio = 0.01  # Error Rate of eigenvalue in different ways
     Overshoot_Ratio = 0.2  # Rate of overshoot at one analyser
-    Invalid_Count = 300  # Number of data less than this is invalid
+    Invalid_Count = 150  # Number of data less than this is invalid
 
 
 def main():
