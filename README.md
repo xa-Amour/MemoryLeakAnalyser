@@ -7,6 +7,7 @@ Analyze and warn of memory leaks as well as uploading result on test machine
 ## Keywords
 * Python3
 * Elastic Search
+* numpy/matplotlib
 * Ridge regression
 
 ## Usage
